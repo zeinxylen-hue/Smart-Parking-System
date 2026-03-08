@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Smart Pay Parking System</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- QR Generator -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<!-- QR Scanner -->
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<!-- Excel Export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+
+body{
+font-family:Arial;
+text-align:center;
+background:#FCA84E;
+}
+
+.container{
+background:white;
+padding:20px;
+margin:auto;
+width:90%;
+max-width:600px;
+border-radius:10px;
+box-shadow:0 0 10px rgba(0,0,0,0.1);
+}
+
+input,select,button{
+padding:10px;
+margin:5px;
+width:90%;
+}
+
+button{
+background:#FC8A4E;
+color:white;
+border:none;
+cursor:pointer;
+}
+
+button:hover{
+background:#1b5e20;
+}
+
+table{
+width:100%;
+margin-top:20px;
+border-collapse:collapse;
+}
+
+th,td{
+border:1px solid #ccc;
+padding:5px;
+}
+
+#qr{
+margin:10px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>Smart Pay Parking System</h2>
+
+<h3>Vehicle Registration</h3>
+
+<select id="vehicleType">
+<option>Motorcycle</option>
+<option>Car</option>
+<option>Truck</option>
+</select>
+
+<input id="plate" placeholder="Plate Number">
+
+<button onclick="registerVehicle()">Register / Generate QR</button>
+
+<div id="qr"></div>
+
+<hr>
+
+<h3>Scan QR (Time IN / Time OUT)</h3>
+
+<div id="reader" style="width:300px;margin:auto;"></div>
+
+<hr>
+
+<button onclick="exportExcel()">Export Transactions to Excel</button>
+
+<table id="table">
+<thead>
+<tr>
+<th>Plate</th>
+<th>Vehicle</th>
+<th>Time In</th>
+<th>Time Out</th>
+<th>Hours</th>
+<th>Fee</th>
+</tr>
+</thead>
+
+<tbody></tbody>
+
+</table>
+
+</div>
+
+<script>
+
+let vehicles = {}
+let transactions = []
+
+function getPHTime(){
+
+let now = new Date()
+
+let utc = now.getTime() + (now.getTimezoneOffset() * 60000)
+
+let ph = new Date(utc + (3600000*8))
+
+return ph
+
+}
+
+function registerVehicle(){
+
+let plate = document.getElementById("plate").value.trim().toUpperCase()
+let type = document.getElementById("vehicleType").value
+
+if(!plate){
+alert("Enter plate number")
+return
+}
+
+if(!vehicles[plate]){
+
+vehicles[plate] = {
+type:type,
+plate:plate
+}
+
+document.getElementById("qr").innerHTML=""
+
+new QRCode(document.getElementById("qr"),{
+text:plate,
+width:200,
+height:200
+})
+
+alert("New QR Code generated")
+
+}else{
+
+document.getElementById("qr").innerHTML=""
+
+new QRCode(document.getElementById("qr"),{
+text:plate,
+width:200,
+height:200
+})
+
+alert("Vehicle already registered. QR reused.")
+
+}
+
+}
+
+function computeFee(hours){
+
+if(hours <=3){
+return 5
+}else{
+let excess = Math.ceil(hours-3)
+return 5 + (excess*50)
+}
+
+}
+
+function updateTable(){
+
+let tbody = document.querySelector("#table tbody")
+tbody.innerHTML=""
+
+transactions.forEach(t=>{
+
+let row = `<tr>
+<td>${t.plate}</td>
+<td>${t.type}</td>
+<td>${t.timein}</td>
+<td>${t.timeout||""}</td>
+<td>${t.hours||""}</td>
+<td>${t.fee||""}</td>
+</tr>`
+
+tbody.innerHTML+=row
+
+})
+
+}
+
+function processScan(plate){
+
+if(!vehicles[plate]){
+alert("Vehicle not registered")
+return
+}
+
+let open = transactions.find(t=>t.plate===plate && !t.timeout)
+
+let now = getPHTime()
+
+if(!open){
+
+transactions.push({
+plate:plate,
+type:vehicles[plate].type,
+timein:now.toLocaleString(),
+timeout:null,
+hours:null,
+fee:null
+})
+
+alert("Time IN recorded")
+
+}else{
+
+let timeIn = new Date(open.timein)
+let diff = (now - timeIn)/3600000
+
+open.timeout = now.toLocaleString()
+open.hours = diff.toFixed(2)
+open.fee = computeFee(diff)
+
+alert("Time OUT recorded\nFee: ₱"+open.fee)
+
+}
+
+updateTable()
+
+}
+
+function exportExcel(){
+
+let data = transactions.map(t=>({
+Plate:t.plate,
+Vehicle:t.type,
+TimeIn:t.timein,
+TimeOut:t.timeout,
+Hours:t.hours,
+Fee:t.fee
+}))
+
+let ws = XLSX.utils.json_to_sheet(data)
+let wb = XLSX.utils.book_new()
+
+XLSX.utils.book_append_sheet(wb,ws,"Parking Transactions")
+
+XLSX.writeFile(wb,"parking_transactions.xlsx")
+
+}
+
+const scanner = new Html5QrcodeScanner(
+"reader",
+{fps:10,qrbox:200}
+)
+
+scanner.render((decodedText)=>{
+processScan(decodedText)
+})
+
+</script>
+
+</body>
+</html>
